@@ -81,11 +81,11 @@ def fetch_ticker_data_row(ticker):
 st.sidebar.markdown("### ⚙️ Terminal Controls")
 user_watchlist_input = st.sidebar.text_input(
     "Type 4 Tickers (comma separated):", 
-    value="AAPL, MSFT, NVDA, TSLA"
+    value="AAPL, MSFT, NVDA, TSLA,META"
 )
 
 # Parse inputs into a clean array matching the 4-column requirements
-stocks_to_plot = [t.strip().upper() for t in user_watchlist_input.split(",") if t.strip()][:4]
+stocks_to_plot = [t.strip().upper() for t in user_watchlist_input.split(",") if t.strip()][:5]
 
 # Shared structural dimensions for parallel metrics row blocks
 chart_layout_config = dict(
