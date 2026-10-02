@@ -64,7 +64,7 @@ def fetch_ticker_data_row(ticker):
             return pd.DataFrame(), spot, ""
         
         options_list = list(options_dates)
-        nearest_date = options_list[0]
+        nearest_date = options_list[1]
         
         chain = stock.option_chain(nearest_date)
         calls, puts = chain.calls.copy(), chain.puts.copy()
