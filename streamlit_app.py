@@ -11,28 +11,33 @@ REFRESH_INTERVAL_MINUTES = 10
 
 st.set_page_config(page_title="Multi-Asset Options Matrix", layout="wide", page_icon="⚡")
 
-# Custom CSS injection for tight, space-optimized text layout structures
+# Custom CSS to strictly compress padding, margins, and text sizes for a single-screen view
 st.markdown("""
     <style>
-    html, body, [data-testid="stAppViewContainer"] { font-size: 11px !important; }
-    h1 { font-size: 15px !important; margin-top: 1px !important; margin-bottom: 1px !important; padding-top: 1px !important;}
-    h4 { font-size: 12px !important; font-weight: bold !important; margin-top: 4px !important; margin-bottom: 1px !important; border-bottom: 1px solid #475569; padding-bottom: 1px; color: #f1f5f9;}
-    h5 { font-size: 11px !important; font-weight: bold !important; margin-bottom: 0px !important; color: #a855f7;}
+    html, body, [data-testid="stAppViewContainer"], .main .block-container { 
+        font-size: 11px !important; 
+        padding-top: 10px !important; 
+        padding-bottom: 5px !important;
+        padding-left: 20px !important;
+        padding-right: 20px !important;
+    }
+    h1 { font-size: 16px !important; font-weight: bold !important; margin: 0px !important; padding: 0px !important;}
+    h4 { font-size: 12px !important; font-weight: bold !important; margin-top: 4px !important; margin-bottom: 2px !important; border-bottom: 1px solid #475569; padding-bottom: 2px; color: #f8fafc;}
     div[data-testid="stSidebarUserContent"] { padding-top: 0.5rem !important; }
-    div[data-testid="element-container"] { margin-bottom: 1px !important; }
+    .timer-banner { background-color: #0f172a; padding: 4px 10px; border-radius: 4px; border: 1px solid #475569; margin-top: 4px; margin-bottom: 4px; font-size: 11px; font-weight: 500; }
+    .header-stat { font-size: 10px !important; font-weight: normal !important; color: #cbd5e1; background-color: #1e293b; padding: 1px 6px; border-radius: 3px; margin-left: 4px; border: 1px solid #334155; display: inline-block; vertical-align: middle; }
     .stTextInput input { font-size: 11px !important; padding: 4px !important; }
-    .timer-banner { background-color: #0f172a; padding: 6px 12px; border-radius: 4px; border: 1px solid #334155; margin-bottom: 8px; font-size: 11px; }
+    div[data-testid="element-container"] { margin-bottom: 0px !important; }
+    div.stGap { gap: 0px !important; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("⚡ Multi-Asset Options Row Matrix")
-
-# Display the Refresh Interval metadata prominently on the primary dashboard area
+# Display refresh engine status banner
 current_time = datetime.now().strftime("%H:%M:%S")
 st.markdown(
-    f"<div class='timer-banner'>🔄 <b>Automation Engine Status:</b> Active | "
-    f"<b>Refresh Cycle Cadence:</b> Every {REFRESH_INTERVAL_MINUTES} Minutes | "
-    f"<b>Last Terminal Pull:</b> {current_time}</div>", 
+    f"<div class='timer-banner'>🔄 <b>Automation:</b> Active | "
+    f"<b>Interval:</b> Every {REFRESH_INTERVAL_MINUTES} Mins | "
+    f"<b>Last Sync:</b> {current_time}</div>", 
     unsafe_allow_html=True
 )
 
@@ -44,7 +49,6 @@ custom_session.headers.update({
 
 @st.cache_data(ttl=900)
 def fetch_ticker_data_row(ticker):
-    """Pulls and isolates the closest option expiration contract layer for a ticker."""
     stock = yf.Ticker(ticker, session=custom_session)
     try:
         fast_info = stock.fast_info
@@ -80,22 +84,21 @@ def fetch_ticker_data_row(ticker):
 # ==========================================
 st.sidebar.markdown("### ⚙️ Terminal Controls")
 user_watchlist_input = st.sidebar.text_input(
-    "Type 4 Tickers (comma separated):", 
+    "Type 5 Tickers (comma separated):", 
     value="AAPL, MSFT, NVDA, TSLA,META"
 )
 
-# Parse inputs into a clean array matching the 4-column requirements
 stocks_to_plot = [t.strip().upper() for t in user_watchlist_input.split(",") if t.strip()][:5]
 
-# Shared structural dimensions for parallel metrics row blocks
+# Shared compact plot dimensions to lock all 12 charts inside one screen height window
 chart_layout_config = dict(
     hovermode='x unified',
     plot_bgcolor='rgba(0,0,0,0)',
-    height=140,  # Compact vertical frame height to keep rows visible
+    height=120,  # Scaled down to fit 4 rows perfectly on one screen
     margin=dict(l=5, r=5, t=5, b=5),
-    showlegend=False,
-    xaxis=dict(tickfont=dict(size=7), title=dict(text="Strike", font=dict(size=8))),
-    yaxis=dict(tickfont=dict(size=7), title=dict(font=dict(size=8)))
+    showlegend=False,  # Turned off to save vertical screen real estate
+    xaxis=dict(tickfont=dict(size=10), title=dict(text="", font=dict(size=10))), # Dropped axis label to save space
+    yaxis=dict(tickfont=dict(size=10), title=dict(font=dict(size=10)))
 )
 
 # ==========================================
@@ -109,50 +112,64 @@ with st.spinner("Synchronizing market snapshots..."):
         df_opt, price_spot, expiry_closest = fetch_ticker_data_row(t)
         
         if not df_opt.empty:
-            # Context-bound crop filters out extreme illiquid wings (+/- 15% out of the money)
+            # Focus on At-The-Money (ATM) +/- 15% to keep view compact
             lower_bound = price_spot * 0.85
             upper_bound = price_spot * 1.15
             filtered_df = df_opt[(df_opt['strike'] >= lower_bound) & (df_opt['strike'] <= upper_bound)]
             chart_df = filtered_df.sort_values(by='strike')
             
-            # Create a localized heading block for the stock row
-            st.markdown(f"<h4>📊 {t} Matrix — Spot: \${price_spot:,.2f} | Near Expiry: {expiry_closest}</h4>", unsafe_allow_html=True)
+            # --- MIN/MAX ANALYTICS ---
+            min_iv = chart_df['impliedVolatility'].min()
+            max_iv = chart_df['impliedVolatility'].max()
             
-            # Generate 3 layout panels side-by-side horizontally for this specific stock
+            max_oi_row = chart_df.loc[chart_df['openInterest'].idxmax()] if not chart_df['openInterest'].empty else None
+            max_oi = max_oi_row['openInterest'] if max_oi_row is not None else 0
+            max_oi_strike = max_oi_row['strike'] if max_oi_row is not None else 0
+            
+            max_vol_row = chart_df.loc[chart_df['volume'].idxmax()] if not chart_df['volume'].empty else None
+            max_vol = max_vol_row['volume'] if max_vol_row is not None else 0
+            max_vol_strike = max_vol_row['strike'] if max_vol_row is not None else 0
+
+            # --- HEADER STRIP ---
+            header_html = (
+                f"<h6>"
+                f"📊 {t} — Spot: \${price_spot:,.2f} | Exp: {expiry_closest}"
+                f"<span class='header-stat'>📉 IV: {min_iv:.0f}%-{max_iv:.0f}%</span>"
+                f"<span class='header-stat'>🧱 Max OI: {max_oi:,.0f} @ \${max_oi_strike:.0f}</span>"
+                f"<span class='header-stat'>🔥 Max Vol: {max_vol:,.0f} @ \${max_vol_strike:.0f}</span>"
+                f"</h6>"
+            )
+            st.markdown(header_html, unsafe_allow_html=True)
+            
             c1, c2, c3 = st.columns(3)
             
-            # Panel 1: Implied Volatility Smile
             with c1:
                 fig_iv = px.line(
-                    chart_df, x='strike', y='impliedVolatility', color='Type', markers=True,
-                    labels={'impliedVolatility': 'IV %'},
+                    chart_df, x='strike', y='impliedVolatility', color='Type',
                     color_discrete_map={'Call': '#10b981', 'Put': '#ef4444'},
                     template='plotly_dark'
                 )
                 fig_iv.update_layout(**chart_layout_config)
                 st.plotly_chart(fig_iv, use_container_width=True, key=f"fig_iv_{t}_{index}", config={'displayModeBar': False})
                 
-            # Panel 2: Open Interest Structure Bars
             with c2:
                 fig_oi = px.bar(
                     chart_df, x='strike', y='openInterest', color='Type', barmode='group',
-                    labels={'openInterest': 'OI'},
                     color_discrete_map={'Call': '#10b981', 'Put': '#ef4444'},
                     template='plotly_dark'
                 )
                 fig_oi.update_layout(**chart_layout_config)
                 st.plotly_chart(fig_oi, use_container_width=True, key=f"fig_oi_{t}_{index}", config={'displayModeBar': False})
                 
-            # Panel 3: Daily Volume Traded Bars
             with c3:
                 fig_vol = px.bar(
                     chart_df, x='strike', y='volume', color='Type', barmode='group',
-                    labels={'volume': 'Vol'},
                     color_discrete_map={'Call': '#10b981', 'Put': '#ef4444'},
                     template='plotly_dark'
                 )
                 fig_vol.update_layout(**chart_layout_config)
                 st.plotly_chart(fig_vol, use_container_width=True, key=f"fig_vol_{t}_{index}", config={'displayModeBar': False})
+                
         else:
             st.warning(f"Could not load data for symbol: {t}")
 
