@@ -131,12 +131,13 @@ with st.spinner("Synchronizing market snapshots..."):
             max_vol_strike = max_vol_row['strike'] if max_vol_row is not None else 0
 
             # --- HEADER STRIP ---
+           # --- HEADER STRIP ---
             header_html = (
                 f"<h6>"
-                f"📊 {t} — Spot: \${price_spot:,.2f} | Exp: {expiry_closest}"
+                f"📊 {t} — Spot: ${price_spot:,.2f} | Exp: {expiry_closest}"
                 f"<span class='header-stat'>📉 IV: {min_iv:.0f}%-{max_iv:.0f}%</span>"
-                f"<span class='header-stat'>🧱 Max OI: {max_oi:,.0f} @ \${max_oi_strike:.0f}</span>"
-                f"<span class='header-stat'>🔥 Max Vol: {max_vol:,.0f} @ \${max_vol_strike:.0f}</span>"
+                f"<span class='header-stat'>🧱 Max OI: {max_oi:,.0f} @ ${max_oi_strike:.0f}</span>"
+                f"<span class='header-stat'>🔥 Max Vol: {max_vol:,.0f} @ ${max_vol_strike:.0f}</span>"
                 f"</h6>"
             )
             st.markdown(header_html, unsafe_allow_html=True)
