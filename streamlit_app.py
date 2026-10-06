@@ -5,6 +5,8 @@ import plotly.express as px
 import requests
 import streamlit as st
 import yfinance as yf
+# Non-blocking automatic rerun engine component
+from streamlit_autorefresh import st_autorefresh
 
 # Configuration
 REFRESH_INTERVAL_MINUTES = 10
@@ -22,7 +24,7 @@ st.markdown("""
         padding-right: 20px !important;
     }
     h1 { font-size: 16px !important; font-weight: bold !important; margin: 0px !important; padding: 0px !important;}
-    h4 { font-size: 12px !important; font-weight: bold !important; margin-top: 4px !important; margin-bottom: 2px !important; border-bottom: 1px solid #475569; padding-bottom: 2px; color: #f8fafc;}
+    h6 { font-size: 11px !important; font-weight: bold !important; margin-top: 4px !important; margin-bottom: 2px !important; border-bottom: 1px solid #475569; padding-bottom: 2px; color: #f8fafc;}
     div[data-testid="stSidebarUserContent"] { padding-top: 0.5rem !important; }
     .timer-banner { background-color: #0f172a; padding: 4px 10px; border-radius: 4px; border: 1px solid #475569; margin-top: 4px; margin-bottom: 4px; font-size: 11px; font-weight: 500; }
     .header-stat { font-size: 10px !important; font-weight: normal !important; color: #cbd5e1; background-color: #1e293b; padding: 1px 6px; border-radius: 3px; margin-left: 4px; border: 1px solid #334155; display: inline-block; vertical-align: middle; }
@@ -32,12 +34,21 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# 🔄 NON-BLOCKING AUTOMATED REFRESH ENGINE
+# ==========================================
+# Kicks off a client-side timer. The interval parameter expects milliseconds.
+refresh_counter = st_autorefresh(
+    interval=REFRESH_INTERVAL_MINUTES * 60 * 1000, 
+    key="matrix_auto_refresh_layer"
+)
+
 # Display refresh engine status banner
 current_time = datetime.now().strftime("%H:%M:%S")
 st.markdown(
     f"<div class='timer-banner'>🔄 <b>Automation:</b> Active | "
     f"<b>Interval:</b> Every {REFRESH_INTERVAL_MINUTES} Mins | "
-    f"<b>Last Sync:</b> {current_time}</div>", 
+    f"<b>Last Sync:</b> {current_time} (Cycle: {refresh_counter})</div>", 
     unsafe_allow_html=True
 )
 
@@ -47,7 +58,7 @@ custom_session.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 })
 
-@st.cache_data(ttl=900)
+@st.cache_data(ttl=540) # Trimmed cache TTL slightly below 10 mins to ensure fresh API pull each cycle
 def fetch_ticker_data_row(ticker):
     stock = yf.Ticker(ticker, session=custom_session)
     try:
@@ -85,16 +96,16 @@ def fetch_ticker_data_row(ticker):
 st.sidebar.markdown("### ⚙️ Terminal Controls")
 user_watchlist_input = st.sidebar.text_input(
     "Type 5 Tickers (comma separated):", 
-    value="AAPL, MSFT, NVDA, TSLA,META"
+    value="AAPL, MSFT, NVDA, TSLA, META"
 )
 
 stocks_to_plot = [t.strip().upper() for t in user_watchlist_input.split(",") if t.strip()][:5]
 
-# Shared compact plot dimensions to lock all 12 charts inside one screen height window
+# Shared compact plot dimensions to lock all 15 charts inside one screen height window
 chart_layout_config = dict(
     hovermode='x unified',
     plot_bgcolor='rgba(0,0,0,0)',
-    height=120,  # Scaled down to fit 4 rows perfectly on one screen
+    height=120,  # Scaled down to fit 4-5 rows perfectly on one screen
     margin=dict(l=5, r=5, t=5, b=5),
     showlegend=False,  # Turned off to save vertical screen real estate
     xaxis=dict(tickfont=dict(size=10), title=dict(text="", font=dict(size=10))), # Dropped axis label to save space
@@ -130,14 +141,14 @@ with st.spinner("Synchronizing market snapshots..."):
             max_vol = max_vol_row['volume'] if max_vol_row is not None else 0
             max_vol_strike = max_vol_row['strike'] if max_vol_row is not None else 0
 
-            # --- HEADER STRIP ---
+            # --- HEADER STRIP (Updated with raw f-string prefix 'fr' to eliminate SyntaxWarning) ---
             header_html = (
-                f"<h6>"
-                f"📊 {t} — Spot: \${price_spot:,.2f} | Exp: {expiry_closest}"
-                f"<span class='header-stat'>📉 IV: {min_iv:.0f}%-{max_iv:.0f}%</span>"
-                f"<span class='header-stat'>🧱 Max OI: {max_oi:,.0f} @ \${max_oi_strike:.0f}</span>"
-                f"<span class='header-stat'>🔥 Max Vol: {max_vol:,.0f} @ \${max_vol_strike:.0f}</span>"
-                f"</h6>"
+                fr"<h6>"
+                fr"📊 {t} — Spot: \${price_spot:,.2f} | Exp: {expiry_closest}"
+                fr"<span class='header-stat'>📉 IV: {min_iv:.0f}%-{max_iv:.0f}%</span>"
+                fr"<span class='header-stat'>🧱 Max OI: {max_oi:,.0f} @ \${max_oi_strike:.0f}</span>"
+                fr"<span class='header-stat'>🔥 Max Vol: {max_vol:,.0f} @ \${max_vol_strike:.0f}</span>"
+                fr"</h6>"
             )
             st.markdown(header_html, unsafe_allow_html=True)
             
@@ -172,9 +183,3 @@ with st.spinner("Synchronizing market snapshots..."):
                 
         else:
             st.warning(f"Could not load data for symbol: {t}")
-
-# ==========================================
-# 🔄 AUTOMATED UPDATE INTERVAL ENGINE
-# ==========================================
-time.sleep(REFRESH_INTERVAL_MINUTES * 60)
-st.rerun()
