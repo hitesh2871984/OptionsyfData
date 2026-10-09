@@ -110,6 +110,7 @@ with st.spinner("Synchronizing market snapshots..."):
             continue
             
         df_opt, price_spot, expiry_closest = fetch_ticker_data_row(t)
+        time.sleep(3) # Pauses for 2 seconds before the next request
         
         if not df_opt.empty:
             # Focus on At-The-Money (ATM) +/- 15% to keep view compact
