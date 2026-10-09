@@ -32,6 +32,34 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# 🔒 SIMPLE AUTHENTICATION SYSTEM
+# ==========================================
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+def check_login():
+    """Callback to verify credentials and update state."""
+    # Replace 'admin' and 'options123' with your secure credentials
+    if st.session_state["username"] == "admin" and st.session_state["password"] == "options123":
+        st.session_state["authenticated"] = True
+        st.success("Access Granted!")
+    else:
+        st.error("❌ Invalid Username or Password")
+
+# Render Login Portal if not logged in
+if not st.session_state["authenticated"]:
+    st.title("🔐 Terminal Access Control")
+    with st.form("login_form"):
+        st.text_input("Username", key="username")
+        st.text_input("Password", type="password", key="password")
+        st.form_submit_button("Access Dashboard", on_click=check_login)
+    st.stop()  # Prevents execution of the rest of the app until authenticated
+
+# ==========================================
+# 📈 PRIMARY APP TERMINAL ENGINE (AUTHENTICATED Only)
+# ==========================================
+
 # Display refresh engine status banner
 current_time = datetime.now().strftime("%H:%M:%S")
 st.markdown(
@@ -85,8 +113,13 @@ def fetch_ticker_data_row(ticker):
 st.sidebar.markdown("### ⚙️ Terminal Controls")
 user_watchlist_input = st.sidebar.text_input(
     "Type 5 Tickers (comma separated):", 
-    value="AAPL, MSFT, NVDA, TSLA,META"
+    value="AAPL, MSFT, NVDA, TSLA, META"
 )
+
+# Logout option in the sidebar
+if st.sidebar.button("Logout Dashboard"):
+    st.session_state["authenticated"] = False
+    st.rerun()
 
 stocks_to_plot = [t.strip().upper() for t in user_watchlist_input.split(",") if t.strip()][:5]
 
@@ -94,10 +127,10 @@ stocks_to_plot = [t.strip().upper() for t in user_watchlist_input.split(",") if 
 chart_layout_config = dict(
     hovermode='x unified',
     plot_bgcolor='rgba(0,0,0,0)',
-    height=120,  # Scaled down to fit 4 rows perfectly on one screen
+    height=120,  
     margin=dict(l=5, r=5, t=5, b=5),
-    showlegend=False,  # Turned off to save vertical screen real estate
-    xaxis=dict(tickfont=dict(size=10), title=dict(text="", font=dict(size=10))), # Dropped axis label to save space
+    showlegend=False,  
+    xaxis=dict(tickfont=dict(size=10), title=dict(text="", font=dict(size=10))), 
     yaxis=dict(tickfont=dict(size=10), title=dict(font=dict(size=10)))
 )
 
@@ -110,10 +143,9 @@ with st.spinner("Synchronizing market snapshots..."):
             continue
             
         df_opt, price_spot, expiry_closest = fetch_ticker_data_row(t)
-        time.sleep(3) # Pauses for 2 seconds before the next request
+        time.sleep(3) 
         
         if not df_opt.empty:
-            # Focus on At-The-Money (ATM) +/- 15% to keep view compact
             lower_bound = price_spot * 0.85
             upper_bound = price_spot * 1.15
             filtered_df = df_opt[(df_opt['strike'] >= lower_bound) & (df_opt['strike'] <= upper_bound)]
@@ -132,7 +164,6 @@ with st.spinner("Synchronizing market snapshots..."):
             max_vol_strike = max_vol_row['strike'] if max_vol_row is not None else 0
 
             # --- HEADER STRIP ---
-           # --- HEADER STRIP ---
             header_html = (
                 f"<h6>"
                 f"📊 {t} — Spot: ${price_spot:,.2f} | Exp: {expiry_closest}"
@@ -171,6 +202,7 @@ with st.spinner("Synchronizing market snapshots..."):
                 )
                 fig_vol.update_layout(**chart_layout_config)
                 st.plotly_chart(fig_vol, width="stretch", key=f"fig_vol_{t}_{index}", config={'displayModeBar': False})
+                
         else:
             st.warning(f"Could not load data for symbol: {t}")
 
