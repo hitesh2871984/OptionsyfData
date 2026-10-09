@@ -152,7 +152,7 @@ with st.spinner("Synchronizing market snapshots..."):
                     template='plotly_dark'
                 )
                 fig_iv.update_layout(**chart_layout_config)
-                st.plotly_chart(fig_iv, use_container_width=True, key=f"fig_iv_{t}_{index}", config={'displayModeBar': False})
+                st.plotly_chart(fig_iv, width="stretch", key=f"fig_iv_{t}_{index}", config={'displayModeBar': False})
                 
             with c2:
                 fig_oi = px.bar(
@@ -161,7 +161,7 @@ with st.spinner("Synchronizing market snapshots..."):
                     template='plotly_dark'
                 )
                 fig_oi.update_layout(**chart_layout_config)
-                st.plotly_chart(fig_oi, use_container_width=True, key=f"fig_oi_{t}_{index}", config={'displayModeBar': False})
+                st.plotly_chart(fig_oi, width="stretch", key=f"fig_oi_{t}_{index}", config={'displayModeBar': False})
                 
             with c3:
                 fig_vol = px.bar(
@@ -170,8 +170,7 @@ with st.spinner("Synchronizing market snapshots..."):
                     template='plotly_dark'
                 )
                 fig_vol.update_layout(**chart_layout_config)
-                st.plotly_chart(fig_vol, use_container_width=True, key=f"fig_vol_{t}_{index}", config={'displayModeBar': False})
-                
+                st.plotly_chart(fig_vol, width="stretch", key=f"fig_vol_{t}_{index}", config={'displayModeBar': False})
         else:
             st.warning(f"Could not load data for symbol: {t}")
 
