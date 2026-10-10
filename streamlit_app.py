@@ -1,5 +1,6 @@
 from datetime import datetime
 import time
+import warnings
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -8,9 +9,8 @@ import requests
 import streamlit as st
 import yfinance as yf
 
-import warnings
-# Suppress specific yfinance crumb warnings
-warnings.filterwarnings('ignore', category=UserWarning, module='yfinance')
+# Suppress yfinance crumb warnings and minor deprecation notices
+warnings.filterwarnings("ignore", category=UserWarning, module="yfinance")
 
 # Configuration & Page Setup
 REFRESH_INTERVAL_MINUTES = 10
@@ -117,9 +117,7 @@ if app_mode == "📊 Multi-Asset Options Matrix":
       fast_info = stock.fast_info
       spot = fast_info.get("lastPrice", 0.0)
       if spot == 0.0:
-        hist = stock.history(
-            period="5d"
-        )  # 5d ensures weekend fallback to Friday close
+        hist = stock.history(period="5d")
         if not hist.empty:
           spot = hist["Close"].iloc[-1]
     except Exception:
@@ -177,7 +175,7 @@ if app_mode == "📊 Multi-Asset Options Matrix":
         continue
 
       df_opt, price_spot, expiry_closest = fetch_ticker_data_row(t)
-      time.sleep(2.5)  # Increased buffer delay to prevent HTTP 429 throttling
+      time.sleep(2.5)
 
       if not df_opt.empty:
         lower_bound = price_spot * 0.85
