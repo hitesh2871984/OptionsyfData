@@ -113,7 +113,9 @@ if app_mode == "📊 Multi-Asset Options Matrix":
       fast_info = stock.fast_info
       spot = fast_info.get("lastPrice", 0.0)
       if spot == 0.0:
-        hist = stock.history(period="1d")
+        hist = stock.history(
+            period="5d"
+        )  # 5d ensures weekend fallback to Friday close
         if not hist.empty:
           spot = hist["Close"].iloc[-1]
     except Exception:
@@ -163,13 +165,15 @@ if app_mode == "📊 Multi-Asset Options Matrix":
       yaxis=dict(tickfont=dict(size=10), title=dict(font=dict(size=10))),
   )
 
-  with st.spinner("Synchronizing market snapshots..."):
+  with st.spinner(
+      "Synchronizing market snapshots (rate-limit mitigation active)..."
+  ):
     for index, t in enumerate(stocks_to_plot):
       if not t:
         continue
 
       df_opt, price_spot, expiry_closest = fetch_ticker_data_row(t)
-      time.sleep(1.0)  # Rate limit buffer
+      time.sleep(2.5)  # Increased buffer delay to prevent HTTP 429 throttling
 
       if not df_opt.empty:
         lower_bound = price_spot * 0.85
@@ -276,7 +280,8 @@ if app_mode == "📊 Multi-Asset Options Matrix":
           )
       else:
         st.warning(
-            f"Could not load data for symbol: {t} (Rate limited / Market closed)"
+            f"Could not load data for symbol: {t} (Weekend/Market Closed or"
+            " Rate-limited)"
         )
 
   time.sleep(REFRESH_INTERVAL_MINUTES * 60)
@@ -298,7 +303,7 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
     for attempt in range(3):
       try:
         ticker = yf.Ticker("^GSPC", session=custom_session)
-        todays_data = ticker.history(period="1d")
+        todays_data = ticker.history(period="5d")
         spot = (
             round(todays_data["Close"].iloc[-1], 2)
             if not todays_data.empty
@@ -343,7 +348,7 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
           return float(last), float(closest_row["strike"])
         return None, None
       except Exception:
-        time.sleep(1)
+        time.sleep(1.5)
     return None, None
 
 
@@ -357,7 +362,7 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
   else:
     selected_expiry = None
     st.sidebar.warning(
-        "No expiration dates available (Rate-limited or market closed)."
+        "No expiration dates available (Weekend / Market Closed)."
     )
 
   if st.sidebar.button("🔄 Refresh Spot & Data"):
@@ -504,7 +509,7 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
           default_p_prem = live_p
           st.success(f"Fetched Put Price: ${live_p:.2f} (Strike: {matched_s})")
         else:
-          st.warning("Could not fetch live price (Rate limited).")
+          st.warning("Could not fetch live price (Market closed/Rate limited).")
       put_prem = st.number_input(
           "Put Premium Paid ($)",
           value=float(default_p_prem),
@@ -527,7 +532,7 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
           default_c_prem = live_c
           st.success(f"Fetched Call Price: ${live_c:.2f} (Strike: {matched_s})")
         else:
-          st.warning("Could not fetch live price (Rate limited).")
+          st.warning("Could not fetch live price (Market closed/Rate limited).")
       call_prem = st.number_input(
           "Call Premium Paid ($)",
           value=float(default_c_prem),
@@ -570,7 +575,7 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
               f"Fetched Short Put Price: ${live_p:.2f} (Strike: {matched_s})"
           )
         else:
-          st.warning("Could not fetch live price (Rate limited).")
+          st.warning("Could not fetch live price (Market closed/Rate limited).")
       s_put_prem = st.number_input(
           "Put Premium Collected ($)",
           value=float(default_sp_prem),
@@ -595,7 +600,7 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
               f"Fetched Short Call Price: ${live_c:.2f} (Strike: {matched_s})"
           )
         else:
-          st.warning("Could not fetch live price (Rate limited).")
+          st.warning("Could not fetch live price (Market closed/Rate limited).")
       s_call_prem = st.number_input(
           "Call Premium Collected ($)",
           value=float(default_sc_prem),
@@ -661,7 +666,7 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
         )
       else:
         st.warning(
-            "Some leg prices could not be fetched due to rate-limiting."
+            "Some leg prices could not be fetched (Market closed/Rate limited)."
         )
 
     p1 = put_payoff(S, ic_lp_s, ic_lp_p, "long")
@@ -740,7 +745,7 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
                 default_prem = live_p
                 st.success(f"Fetched: ${live_p:.2f} (@ Strike {matched_s})")
               else:
-                st.warning("Fetch failed (Rate limited)")
+                st.warning("Fetch failed (Market closed / Rate limited)")
             premium = st.number_input(
                 "Premium ($)",
                 value=float(default_prem),
