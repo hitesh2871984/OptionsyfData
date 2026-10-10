@@ -8,6 +8,10 @@ import requests
 import streamlit as st
 import yfinance as yf
 
+import warnings
+# Suppress specific yfinance crumb warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='yfinance')
+
 # Configuration & Page Setup
 REFRESH_INTERVAL_MINUTES = 10
 
