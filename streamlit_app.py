@@ -1,3 +1,4 @@
+
 from datetime import datetime
 import time
 import numpy as np
@@ -161,7 +162,7 @@ if app_mode == "📊 Multi-Asset Options Matrix":
         continue
 
       df_opt, price_spot, expiry_closest = fetch_ticker_data_row(t)
-      time.sleep(1)
+      time.sleep(3)
 
       if not df_opt.empty:
         lower_bound = price_spot * 0.85
