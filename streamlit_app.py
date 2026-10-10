@@ -1,4 +1,3 @@
-
 from datetime import datetime
 import time
 import numpy as np
@@ -81,6 +80,18 @@ app_mode = st.sidebar.selectbox(
 
 st.sidebar.markdown("---")
 
+# Setup robust shared custom session with browser-like headers
+custom_session = requests.Session()
+custom_session.headers.update({
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+        " like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://finance.yahoo.com",
+})
+
 # ==========================================
 # FEATURE 1: MULTI-ASSET OPTIONS MATRIX
 # ==========================================
@@ -93,22 +104,18 @@ if app_mode == "📊 Multi-Asset Options Matrix":
       unsafe_allow_html=True,
   )
 
-  custom_session = requests.Session()
-  custom_session.headers.update({
-      "User-Agent": (
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-          " like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      )
-  })
 
   @st.cache_data(ttl=900)
   def fetch_ticker_data_row(ticker):
     stock = yf.Ticker(ticker, session=custom_session)
+    spot = 0.0
     try:
       fast_info = stock.fast_info
       spot = fast_info.get("lastPrice", 0.0)
       if spot == 0.0:
-        spot = stock.history(period="1d")["Close"].iloc[-1]
+        hist = stock.history(period="1d")
+        if not hist.empty:
+          spot = hist["Close"].iloc[-1]
     except Exception:
       spot = 0.0
 
@@ -162,7 +169,7 @@ if app_mode == "📊 Multi-Asset Options Matrix":
         continue
 
       df_opt, price_spot, expiry_closest = fetch_ticker_data_row(t)
-      time.sleep(3)
+      time.sleep(1.0)  # Rate limit buffer
 
       if not df_opt.empty:
         lower_bound = price_spot * 0.85
@@ -173,12 +180,21 @@ if app_mode == "📊 Multi-Asset Options Matrix":
         ]
         chart_df = filtered_df.sort_values(by="strike")
 
-        min_iv = chart_df["impliedVolatility"].min()
-        max_iv = chart_df["impliedVolatility"].max()
+        min_iv = (
+            chart_df["impliedVolatility"].min()
+            if not chart_df["impliedVolatility"].empty
+            else 0
+        )
+        max_iv = (
+            chart_df["impliedVolatility"].max()
+            if not chart_df["impliedVolatility"].empty
+            else 0
+        )
 
         max_oi_row = (
             chart_df.loc[chart_df["openInterest"].idxmax()]
             if not chart_df["openInterest"].empty
+            and chart_df["openInterest"].max() > 0
             else None
         )
         max_oi = max_oi_row["openInterest"] if max_oi_row is not None else 0
@@ -186,7 +202,7 @@ if app_mode == "📊 Multi-Asset Options Matrix":
 
         max_vol_row = (
             chart_df.loc[chart_df["volume"].idxmax()]
-            if not chart_df["volume"].empty
+            if not chart_df["volume"].empty and chart_df["volume"].max() > 0
             else None
         )
         max_vol = max_vol_row["volume"] if max_vol_row is not None else 0
@@ -218,7 +234,7 @@ if app_mode == "📊 Multi-Asset Options Matrix":
           fig_iv.update_layout(**chart_layout_config)
           st.plotly_chart(
               fig_iv,
-              use_container_width=True,
+              width="stretch",
               key=f"fig_iv_{t}_{index}",
               config={"displayModeBar": False},
           )
@@ -236,7 +252,7 @@ if app_mode == "📊 Multi-Asset Options Matrix":
           fig_oi.update_layout(**chart_layout_config)
           st.plotly_chart(
               fig_oi,
-              use_container_width=True,
+              width="stretch",
               key=f"fig_oi_{t}_{index}",
               config={"displayModeBar": False},
           )
@@ -254,12 +270,14 @@ if app_mode == "📊 Multi-Asset Options Matrix":
           fig_vol.update_layout(**chart_layout_config)
           st.plotly_chart(
               fig_vol,
-              use_container_width=True,
+              width="stretch",
               key=f"fig_vol_{t}_{index}",
               config={"displayModeBar": False},
           )
       else:
-        st.warning(f"Could not load data for symbol: {t}")
+        st.warning(
+            f"Could not load data for symbol: {t} (Rate limited / Market closed)"
+        )
 
   time.sleep(REFRESH_INTERVAL_MINUTES * 60)
   st.rerun()
@@ -270,30 +288,79 @@ if app_mode == "📊 Multi-Asset Options Matrix":
 elif app_mode == "📈 SPX Strategy Payoff Visualizer":
   st.title("📊 SPX Options Strategy Payoff Visualizer")
   st.write(
-      "Fetches current S&P 500 SPOT data from Yahoo Finance and calculates"
-      " options strategies."
+      "Fetches current S&P 500 SPOT data and live option chains from Yahoo"
+      " Finance."
   )
 
 
-  @st.cache_data(ttl=60)
-  def get_spx_price():
-    try:
-      ticker = yf.Ticker("^GSPC")
-      todays_data = ticker.history(period="1d")
-      if not todays_data.empty:
-        return round(todays_data["Close"].iloc[-1], 2)
-      return 5000.0
-    except Exception as e:
-      st.error(f"Error fetching data from Yahoo Finance: {e}")
-      return 5000.0
+  @st.cache_data(ttl=300)
+  def get_spx_data():
+    for attempt in range(3):
+      try:
+        ticker = yf.Ticker("^GSPC", session=custom_session)
+        todays_data = ticker.history(period="1d")
+        spot = (
+            round(todays_data["Close"].iloc[-1], 2)
+            if not todays_data.empty
+            else 5000.0
+        )
+        expirations = ticker.options
+        if expirations:
+          return spot, expirations
+        time.sleep(1)
+      except Exception:
+        time.sleep(2)
+    return 5000.0, []
 
 
-  spot_price = get_spx_price()
+  spot_price, spx_expirations = get_spx_data()
+
+
+  @st.cache_data(ttl=120)
+  def fetch_option_market_price(expiry_date, option_type, target_strike):
+    for attempt in range(3):
+      try:
+        stock = yf.Ticker("^GSPC", session=custom_session)
+        chain = stock.option_chain(expiry_date)
+        df = chain.calls if option_type.lower() == "call" else chain.puts
+        if df.empty:
+          return None, None
+        df["diff"] = abs(df["strike"] - target_strike)
+        closest_row = df.loc[df["diff"].idxmin()]
+        bid = closest_row.get("bid", 0)
+        ask = closest_row.get("ask", 0)
+        last = closest_row.get("lastPrice", 0)
+        if (
+            pd.notnull(bid)
+            and pd.notnull(ask)
+            and float(bid) > 0
+            and float(ask) > 0
+        ):
+          return float((float(bid) + float(ask)) / 2), float(
+              closest_row["strike"]
+          )
+        if pd.notnull(last) and float(last) > 0:
+          return float(last), float(closest_row["strike"])
+        return None, None
+      except Exception:
+        time.sleep(1)
+    return None, None
+
 
   st.sidebar.header("🔧 SPX Strategy Settings")
   st.sidebar.metric(label="Current SPX Spot Price", value=f"${spot_price:,.2f}")
 
-  if st.sidebar.button("🔄 Refresh Spot Price"):
+  if spx_expirations:
+    selected_expiry = st.sidebar.selectbox(
+        "📅 Select Expiration Date", spx_expirations
+    )
+  else:
+    selected_expiry = None
+    st.sidebar.warning(
+        "No expiration dates available (Rate-limited or market closed)."
+    )
+
+  if st.sidebar.button("🔄 Refresh Spot & Data"):
     st.cache_data.clear()
     st.rerun()
 
@@ -384,7 +451,7 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
         hovermode="x unified",
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     max_profit = np.max(total_payoff)
     max_loss = np.min(total_payoff)
@@ -417,28 +484,60 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
   with tab1:
     st.header("Long Strangle Payoff Graph")
     st.caption(
-        "Expect a high volatility breakdown out of a price channel. Buying an"
-        " OTM Put and OTM Call."
+        "Expect volatility breakout. Buying an OTM Put and OTM Call for"
+        f" expiration: {selected_expiry}"
     )
+
     col1, col2 = st.columns(2)
     with col1:
       put_strike = st.number_input(
           "Long Put Strike", value=int(spot_price * 0.98), step=5, key="ls_p_s"
       )
+      default_p_prem = 25.0
+      if selected_expiry and st.button(
+          "🔗 Fetch Live Put Price", key="fetch_ls_p"
+      ):
+        live_p, matched_s = fetch_option_market_price(
+            selected_expiry, "Put", put_strike
+        )
+        if live_p is not None:
+          default_p_prem = live_p
+          st.success(f"Fetched Put Price: ${live_p:.2f} (Strike: {matched_s})")
+        else:
+          st.warning("Could not fetch live price (Rate limited).")
       put_prem = st.number_input(
-          "Put Premium Paid ($)", value=25.0, step=0.5, key="ls_p_p"
+          "Put Premium Paid ($)",
+          value=float(default_p_prem),
+          step=0.5,
+          key="ls_p_p",
       )
+
     with col2:
       call_strike = st.number_input(
           "Long Call Strike", value=int(spot_price * 1.02), step=5, key="ls_c_s"
       )
+      default_c_prem = 25.0
+      if selected_expiry and st.button(
+          "🔗 Fetch Live Call Price", key="fetch_ls_c"
+      ):
+        live_c, matched_s = fetch_option_market_price(
+            selected_expiry, "Call", call_strike
+        )
+        if live_c is not None:
+          default_c_prem = live_c
+          st.success(f"Fetched Call Price: ${live_c:.2f} (Strike: {matched_s})")
+        else:
+          st.warning("Could not fetch live price (Rate limited).")
       call_prem = st.number_input(
-          "Call Premium Paid ($)", value=25.0, step=0.5, key="ls_c_p"
+          "Call Premium Paid ($)",
+          value=float(default_c_prem),
+          step=0.5,
+          key="ls_c_p",
       )
 
     p1 = put_payoff(S, put_strike, put_prem, "long")
     p2 = call_payoff(S, call_strike, call_prem, "long")
-    legs_desc = f"1x Long Put Strike {put_strike} @ ${put_prem} | 1x Long Call Strike {call_strike} @ ${call_prem}"
+    legs_desc = f"1x Long Put Strike {put_strike} @ ${put_prem} | 1x Long Call Strike {call_strike} @ ${call_prem} (Exp: {selected_expiry})"
     plot_strategy(
         S,
         (p1 + p2) * 100,
@@ -449,28 +548,64 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
   with tab2:
     st.header("Short Strangle Payoff Graph")
     st.caption(
-        "Expect consolidated, range-bound behavior. Selling an OTM Put and OTM"
-        " Call."
+        "Range-bound premium collection. Selling an OTM Put and OTM Call for"
+        f" expiration: {selected_expiry}"
     )
+
     col1, col2 = st.columns(2)
     with col1:
       s_put_strike = st.number_input(
           "Short Put Strike", value=int(spot_price * 0.97), step=5, key="ss_p_s"
       )
+      default_sp_prem = 20.0
+      if selected_expiry and st.button(
+          "🔗 Fetch Live Short Put Price", key="fetch_ss_p"
+      ):
+        live_p, matched_s = fetch_option_market_price(
+            selected_expiry, "Put", s_put_strike
+        )
+        if live_p is not None:
+          default_sp_prem = live_p
+          st.success(
+              f"Fetched Short Put Price: ${live_p:.2f} (Strike: {matched_s})"
+          )
+        else:
+          st.warning("Could not fetch live price (Rate limited).")
       s_put_prem = st.number_input(
-          "Put Premium Collected ($)", value=20.0, step=0.5, key="ss_p_p"
+          "Put Premium Collected ($)",
+          value=float(default_sp_prem),
+          step=0.5,
+          key="ss_p_p",
       )
+
     with col2:
       s_call_strike = st.number_input(
           "Short Call Strike", value=int(spot_price * 1.03), step=5, key="ss_c_s"
       )
+      default_sc_prem = 20.0
+      if selected_expiry and st.button(
+          "🔗 Fetch Live Short Call Price", key="fetch_ss_c"
+      ):
+        live_c, matched_s = fetch_option_market_price(
+            selected_expiry, "Call", s_call_strike
+        )
+        if live_c is not None:
+          default_sc_prem = live_c
+          st.success(
+              f"Fetched Short Call Price: ${live_c:.2f} (Strike: {matched_s})"
+          )
+        else:
+          st.warning("Could not fetch live price (Rate limited).")
       s_call_prem = st.number_input(
-          "Call Premium Collected ($)", value=20.0, step=0.5, key="ss_c_p"
+          "Call Premium Collected ($)",
+          value=float(default_sc_prem),
+          step=0.5,
+          key="ss_c_p",
       )
 
     p1 = put_payoff(S, s_put_strike, s_put_prem, "short")
     p2 = call_payoff(S, s_call_strike, s_call_prem, "short")
-    legs_desc = f"1x Short Put Strike {s_put_strike} @ ${s_put_prem} | 1x Short Call Strike {s_call_strike} @ ${s_call_prem}"
+    legs_desc = f"1x Short Put Strike {s_put_strike} @ ${s_put_prem} | 1x Short Call Strike {s_call_strike} @ ${s_call_prem} (Exp: {selected_expiry})"
     plot_strategy(
         S,
         (p1 + p2) * 100,
@@ -481,9 +616,10 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
   with tab3:
     st.header("Iron Condor Payoff Graph")
     st.caption(
-        "A defined risk premium-collection strategy. Selling an inner strangle"
-        " while buying outer protective wings."
+        "Defined risk premium collection strategy for expiration:"
+        f" {selected_expiry}"
     )
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
       ic_lp_s = st.number_input(
@@ -506,12 +642,34 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
       )
       ic_lc_p = st.number_input("LC Premium Paid", value=10.0, step=0.5)
 
+    if selected_expiry and st.button(
+        "🔗 Fetch All Iron Condor Prices from Market"
+    ):
+      lp, _ = fetch_option_market_price(selected_expiry, "Put", ic_lp_s)
+      sp, _ = fetch_option_market_price(selected_expiry, "Put", ic_sp_s)
+      sc, _ = fetch_option_market_price(selected_expiry, "Call", ic_sc_s)
+      lc, _ = fetch_option_market_price(selected_expiry, "Call", ic_lc_s)
+      if (
+          lp is not None
+          and sp is not None
+          and sc is not None
+          and lc is not None
+      ):
+        st.success(
+            f"Fetched! LP: ${lp:.2f} | SP: ${sp:.2f} | SC: ${sc:.2f} | LC:"
+            f" ${lc:.2f}"
+        )
+      else:
+        st.warning(
+            "Some leg prices could not be fetched due to rate-limiting."
+        )
+
     p1 = put_payoff(S, ic_lp_s, ic_lp_p, "long")
     p2 = put_payoff(S, ic_sp_s, ic_sp_p, "short")
     p3 = call_payoff(S, ic_sc_s, ic_sc_p, "short")
     p4 = call_payoff(S, ic_lc_s, ic_lc_p, "long")
 
-    legs_desc = f"LP {ic_lp_s} (-${ic_lp_p}) | SP {ic_sp_s} (+${ic_sp_p}) | SC {ic_sc_s} (+${ic_sc_p}) | LC {ic_lc_s} (-${ic_lc_p})"
+    legs_desc = f"LP {ic_lp_s} (-${ic_lp_p}) | SP {ic_sp_s} (+${ic_sp_p}) | SC {ic_sc_s} (+${ic_sc_p}) | LC {ic_lc_s} (-${ic_lc_p}) (Exp: {selected_expiry})"
     plot_strategy(
         S,
         (p1 + p2 + p3 + p4) * 100,
@@ -522,9 +680,8 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
   with tab4:
     st.header("🛠️ Advanced Custom Option Builder")
     st.caption(
-        "Mix and match up to 8 individual leg components simultaneously to"
-        " visualize complex combinations (e.g., Iron Butterflies, Calendars,"
-        " Ratio Spreads)."
+        "Mix and match up to 8 individual leg components with live market data"
+        f" for expiration: {selected_expiry}"
     )
 
     num_legs = st.number_input(
@@ -572,8 +729,23 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
                 "Strike Price", value=default_strike, step=5, key=f"strike_{i}"
             )
           with c_prem:
+            default_prem = 15.0
+            if selected_expiry and st.button(
+                f"🔗 Fetch", key=f"fetch_custom_{i}"
+            ):
+              live_p, matched_s = fetch_option_market_price(
+                  selected_expiry, opt_type, strike
+              )
+              if live_p is not None:
+                default_prem = live_p
+                st.success(f"Fetched: ${live_p:.2f} (@ Strike {matched_s})")
+              else:
+                st.warning("Fetch failed (Rate limited)")
             premium = st.number_input(
-                "Premium ($)", value=15.0, step=0.5, key=f"prem_{i}"
+                "Premium ($)",
+                value=float(default_prem),
+                step=0.5,
+                key=f"prem_{i}",
             )
 
           if opt_type == "Call":
@@ -602,7 +774,7 @@ elif app_mode == "📈 SPX Strategy Payoff Visualizer":
       plot_strategy(
           S,
           total_custom_payoff * 100,
-          "Custom Multi-Leg Strategy Profile",
+          f"Custom Multi-Leg Strategy Profile (Exp: {selected_expiry})",
           "\n".join(custom_desc),
       )
     else:
